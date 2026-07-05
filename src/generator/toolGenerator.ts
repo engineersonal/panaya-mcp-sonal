@@ -18,6 +18,15 @@ const inputSchema = {
     .describe("Path parameters for Swagger operation calls."),
   queryParams: z.record(z.string(), z.unknown()).optional()
     .describe("Query string parameters for Swagger operation calls."),
+  pagination: z.object({
+    all: z.boolean().optional(),
+    pageParam: z.string().optional(),
+    pageSizeParam: z.string().optional(),
+    startPage: z.number().int().min(0).optional(),
+    pageSize: z.number().int().positive().max(1000).optional(),
+    maxPages: z.number().int().positive().max(1000).optional()
+  }).optional()
+    .describe("Optional pagination helper for list and operation actions."),
   data: z.record(z.string(), z.unknown()).optional()
     .describe("Request body for create and update operations."),
   query: z.record(z.string(), z.unknown()).optional()
@@ -39,6 +48,15 @@ const operationsInputSchema = {
     .describe("Path parameters for call."),
   queryParams: z.record(z.string(), z.unknown()).optional()
     .describe("Query string parameters for call."),
+  pagination: z.object({
+    all: z.boolean().optional(),
+    pageParam: z.string().optional(),
+    pageSizeParam: z.string().optional(),
+    startPage: z.number().int().min(0).optional(),
+    pageSize: z.number().int().positive().max(1000).optional(),
+    maxPages: z.number().int().positive().max(1000).optional()
+  }).optional()
+    .describe("Optional pagination helper for call."),
   data: z.record(z.string(), z.unknown()).optional()
     .describe("Request body for call.")
 };
@@ -93,13 +111,36 @@ export class ToolGenerator {
     return value;
   }
 
-  private listPath(base: string, projectId?: string) {
-    if (!projectId) {
-      return base;
+  private appendQueryParams(path: string, queryParams: Record<string, unknown> = {}) {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(queryParams)) {
+      if (value === undefined || value === null) {
+        continue;
+      }
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          params.append(key, String(item));
+        }
+      } else {
+        params.set(key, String(value));
+      }
     }
 
-    const params = new URLSearchParams({ projectId });
-    return `${base}?${params.toString()}`;
+    const queryString = params.toString();
+    return queryString ? `${path}?${queryString}` : path;
+  }
+
+  private listPath(
+    base: string,
+    projectId?: string,
+    queryParams: Record<string, unknown> = {}
+  ) {
+    return this.appendQueryParams(base, {
+      ...queryParams,
+      ...(projectId ? { projectId } : {})
+    });
   }
 
   private operationSummary(operation: PanayaOperation) {
@@ -158,40 +199,113 @@ export class ToolGenerator {
       }
     }
 
-    const params = new URLSearchParams();
-
-    for (const [key, value] of Object.entries(queryParams)) {
-      if (value === undefined || value === null) {
-        continue;
-      }
-
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          params.append(key, String(item));
-        }
-      } else {
-        params.set(key, String(value));
-      }
-    }
-
-    const queryString = params.toString();
-    return queryString ? `${path}?${queryString}` : path;
+    return this.appendQueryParams(path, queryParams);
   }
 
   private async executeOperation(
     operationId: unknown,
     pathParams?: Record<string, unknown>,
     queryParams?: Record<string, unknown>,
-    data?: any
+    data?: any,
+    pagination?: any
   ) {
     const operation = this.resolveOperation(operationId);
-    const path = this.buildOperationPath(operation, pathParams, queryParams);
 
     if (operation.hasBody && data === undefined) {
       throw new Error("data is required");
     }
 
+    if (pagination?.all) {
+      return this.fetchAllPages(
+        async (pageQueryParams) => {
+          const path = this.buildOperationPath(operation, pathParams, pageQueryParams);
+          return this.client.request(operation.method, path, data);
+        },
+        queryParams,
+        pagination
+      );
+    }
+
+    const path = this.buildOperationPath(operation, pathParams, queryParams);
+
     return this.client.request(operation.method, path, data);
+  }
+
+  private responseItems(response: any) {
+    if (Array.isArray(response)) {
+      return response;
+    }
+
+    if (Array.isArray(response?.data)) {
+      return response.data;
+    }
+
+    if (Array.isArray(response?.entities)) {
+      return response.entities;
+    }
+
+    if (Array.isArray(response?.items)) {
+      return response.items;
+    }
+
+    if (Array.isArray(response?.content)) {
+      return response.content;
+    }
+
+    if (Array.isArray(response?.results)) {
+      return response.results;
+    }
+
+    return [];
+  }
+
+  private async fetchAllPages(
+    fetchPage: (queryParams: Record<string, unknown>) => Promise<any>,
+    baseQueryParams: Record<string, unknown> = {},
+    pagination: any = {}
+  ) {
+    const pageParam = pagination.pageParam || "pageNumber";
+    const pageSizeParam = pagination.pageSizeParam || "pageSize";
+    const startPage = pagination.startPage ?? 1;
+    const pageSize = pagination.pageSize ?? 100;
+    const maxPages = pagination.maxPages ?? 100;
+    const pages = [];
+    const items = [];
+
+    for (let index = 0; index < maxPages; index += 1) {
+      const page = startPage + index;
+      const response = await fetchPage({
+        ...baseQueryParams,
+        [pageParam]: page,
+        [pageSizeParam]: pageSize
+      });
+      const pageItems = this.responseItems(response);
+
+      pages.push({
+        page,
+        count: pageItems.length,
+        response
+      });
+      items.push(...pageItems);
+
+      if (pageItems.length < pageSize) {
+        break;
+      }
+    }
+
+    return {
+      data: items,
+      pages,
+      pageCount: pages.length,
+      totalFetched: items.length,
+      pagination: {
+        pageParam,
+        pageSizeParam,
+        startPage,
+        pageSize,
+        maxPages
+      }
+    };
   }
 
   private async runTool(name: string, input: any, callback: () => Promise<any>) {
@@ -229,12 +343,21 @@ export class ToolGenerator {
       async (input: any) =>
         this.runTool(toolName, input, async () => {
 
-          const { action, id, data, query, projectId } = input;
+          const { action, id, data, query, projectId, queryParams, pagination } = input;
 
           switch (action) {
 
             case "list":
-              return this.client.get(this.listPath(base, projectId));
+              if (pagination?.all) {
+                return this.fetchAllPages(
+                  (pageQueryParams) =>
+                    this.client.get(this.listPath(base, projectId, pageQueryParams)),
+                  queryParams,
+                  pagination
+                );
+              }
+
+              return this.client.get(this.listPath(base, projectId, queryParams));
 
             case "get":
               return this.client.get(
@@ -263,7 +386,8 @@ export class ToolGenerator {
                 input.operationId,
                 input.pathParams,
                 input.queryParams,
-                data
+                data,
+                pagination
               );
 
             default:
@@ -310,7 +434,8 @@ export class ToolGenerator {
                 input.operationId,
                 input.pathParams,
                 input.queryParams,
-                input.data
+                input.data,
+                input.pagination
               );
 
             default:

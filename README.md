@@ -338,6 +338,59 @@ Call one operation:
 }
 ```
 
+Call one paginated page:
+
+```json
+{
+  "action": "call",
+  "operationId": "Get_All_Defects",
+  "pathParams": {
+    "projectId": "19051"
+  },
+  "queryParams": {
+    "pageSize": 100,
+    "pageNumber": 1
+  }
+}
+```
+
+Fetch all pages for APIs that use `pageNumber` and `pageSize`:
+
+```json
+{
+  "action": "call",
+  "operationId": "Get_All_Defects",
+  "pathParams": {
+    "projectId": "19051"
+  },
+  "pagination": {
+    "all": true,
+    "pageSize": 100,
+    "maxPages": 20
+  }
+}
+```
+
+For APIs that use different parameter names, override them:
+
+```json
+{
+  "action": "call",
+  "operationId": "Some_Paginated_Operation",
+  "pathParams": {
+    "projectId": "19051"
+  },
+  "pagination": {
+    "all": true,
+    "pageParam": "page",
+    "pageSizeParam": "size",
+    "startPage": 0,
+    "pageSize": 100,
+    "maxPages": 20
+  }
+}
+```
+
 For operations with a request body, include `data`:
 
 ```json
