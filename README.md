@@ -155,8 +155,11 @@ panaya_businessProcesses
 The server also registers this operation registry tool:
 
 ```text
+panaya_auth
 panaya_operations
 ```
+
+Use `panaya_auth` with `{ "action": "refresh" }` if a long Claude session needs to force-refresh the generated Panaya API token before continuing.
 
 `panaya_operations` is generated from the official Panaya Postman collection. The current generated registry contains 146 curated API examples from `Shared Panaya Catalog of API examples.postman_collection.json`. Swagger can still be used as a fallback source if the Postman collection is unavailable.
 
@@ -350,6 +353,16 @@ For operations with a request body, include `data`:
 }
 ```
 
+### Auth Tool
+
+Force-refresh the generated Panaya API token:
+
+```json
+{
+  "action": "refresh"
+}
+```
+
 ## Response Format
 
 Tool responses include a text block for Claude:
@@ -469,6 +482,8 @@ Then it sends the generated token using:
 ```text
 X-Auth-Token: <token>
 ```
+
+For long-running Claude sessions, call `panaya_auth` with `{ "action": "refresh" }` and then retry the failed request.
 
 ### Claude Does Not Show the Server
 

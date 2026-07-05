@@ -28,8 +28,11 @@ export class PanayaClient {
       this.tokenRequest = this.createApiToken();
     }
 
-    this.apiToken = await this.tokenRequest;
-    this.tokenRequest = undefined;
+    try {
+      this.apiToken = await this.tokenRequest;
+    } finally {
+      this.tokenRequest = undefined;
+    }
 
     return this.apiToken;
   }
@@ -136,5 +139,23 @@ export class PanayaClient {
       default:
         throw new Error(`Unsupported HTTP method: ${method}`);
     }
+  }
+
+  async refreshAuth() {
+    if (!env.username) {
+      return {
+        mode: "direct-token",
+        refreshed: false
+      };
+    }
+
+    this.apiToken = undefined;
+    this.tokenRequest = undefined;
+    await this.getApiToken(true);
+
+    return {
+      mode: "generated-token",
+      refreshed: true
+    };
   }
 }

@@ -6,6 +6,7 @@ export async function bootstrap(server: any, client: any) {
   const discovery = new ApiDiscovery(client);
   const generator = new ToolGenerator(server, client);
 
+  generator.registerAuthTool();
   generator.registerOperationsTool();
 
   const entities = await discovery.listEntities();

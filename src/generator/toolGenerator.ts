@@ -319,4 +319,16 @@ export class ToolGenerator {
         })
     );
   }
+
+  registerAuthTool() {
+    this.server.tool(
+      "panaya_auth",
+      "Refresh the Panaya generated API token",
+      {
+        action: z.enum(["refresh"]).describe("Refresh the generated API token.")
+      },
+      async (input: any) =>
+        this.runTool("panaya_auth", input, async () => this.client.refreshAuth())
+    );
+  }
 }
