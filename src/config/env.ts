@@ -19,5 +19,6 @@ function requireEnv(name: string) {
 
 export const env = {
   baseUrl: requireEnv("PANAYA_BASE_URL"),
-  token: requireEnv("PANAYA_TOKEN")
+  token: requireEnv("PANAYA_TOKEN"),
+  username: process.env.PANAYA_USERNAME
 };
